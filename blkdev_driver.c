@@ -17,13 +17,20 @@ static void simp_blkdev_do_request(struct request_queue *q);
 static int __init simp_blkdev_init(void)
 {
     int ret;
+    elevator_t *old_e;
 
 	simp_blkdev_queue=blk_init_queue(simp_blkdev_do_request,NULL);
     if(!simp_blkdev_queue){
        ret=-ENDMMEM;
        goto err_init_queue;
      }
-       
+
+	old_e=simp_blkdev_queue->elevator;
+	if(IS_ERR_VALUE(elevator_init(simp_blkdev_queue,"noop")))
+		prink(KERN_WARNING "Switch elevator failed,using default\n");
+	else
+		elevator_exit(old_e);
+	
     simp_blkdev_disk=alloc_disk(1);
     if(!simp_blkdev_disk){
         ret=-ENOMEM;
@@ -42,7 +49,7 @@ static int __init simp_blkdev_init(void)
     return 0;
 
     err_alloc_disk:
-		return ret;
+		blk_cleanup_queue(simp_blkdev_queue);
     err_init_queue:
          return ret;
 }
@@ -64,7 +71,7 @@ static void simp_blkdev_do_request(struct request_queue *q)
          }
          switch(rq_data_dir(req)){
          case READ:
-               memcpy(req->buffer,simp_blkdev_data+(req->sector<<9),req->current_nr_sectors<<9); //simp_blkdev_data是哪个数据
+               memcpy(req->buffer,simp_blkdev_data+(req->sector<<9),req->current_nr_sectors<<9); //simp_blkdev_data数组表示块设备
                end_request(req,1)
                ;
                break;
