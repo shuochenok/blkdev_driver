@@ -1,16 +1,50 @@
 #include<linux/moudle.h>
 #include<linux.version.h>
+#include<linux/hdreg.h>
 
 #define SIMP_BLKDEV_DISKNAME  "simp_blkdev"
 #define SIMP_BLKDEV_DEVICEMAJOR COMPAQ_CISS_MAJOR    //使用COMPAQ_CISS_MAJOR的设备驱动号
 #define SIMP_BLKDEV_BYTES (16*1024*1024)
+#define SIMP_BLKDEV_MAXPARTITIONS (64)
 
 static struct gendisk *simp_blkdev_disk;
 static struct request_queue *simp_blkdev_queue;
 
 unsigned char simp_blkdev_data[SIMP_BLKDEV_BYTES];
+
+static int simp_blkdev_getgeo(struct block_device *bdev,struct hd_geometry *geo){
+    /*
+    * capacity heads sectors cylinders
+    * 0~16M     1       1     0~32768
+    * 16M_512M  1       32    1024~32768
+    * 512M~16G  32      32    1024~32768
+    * 16G~...   255     63    2088~...
+    */
+
+	if(SIMP_BLKDEV_BYTES<16*1024*1024){
+		geo->heads=1;
+	    geo->sectors=1;
+	}
+	else if(SIMP_BLKDEV_BYTES < 512*1024*1024){
+         geo->heads=1;
+	     geo->sectors=32;
+	}
+	else if(SIMP_BLKDEV_BYTES < 16ULL*1024*1024*1024){
+         geo->heads=32;
+	     geo->sectors=32;
+	}
+	else{
+         geo->heads=255;
+	     geo->sectors=63;
+	}
+	geo->cylinders=SIMP_BLKDEV_BYTES>>9/geo->heads/geo->sectors;
+	return 0;
+
+}
+
 struct block_device_operations simp_blkdev_fops={
 	   .owner  =THIS_MODULE,
+	   .getgeo  =simp_blkdev_getgeo,
     };
 
 static int simp_blkdev_make_request(struct request_queue *q,struct bio *bio);
@@ -26,7 +60,7 @@ static int __init simp_blkdev_init(void)
      }
    blk_queue_make_request(simp_blkdev_queue,simp_blkdev_make_request);
 
-    simp_blkdev_disk=alloc_disk(1);
+    simp_blkdev_disk=alloc_disk(SIMP_BLKDEV_MAXPARTITIONS);
     if(!simp_blkdev_disk){
         ret=-ENOMEM;
         goto err_alloc_disk;
